@@ -1,0 +1,192 @@
+name: Ohio Supreme Court Case Alerts
+
+on:
+  schedule:
+    - cron: '0 14 * * *'  # 10am EDT / 9am EST daily
+  workflow_dispatch:       # Allow manual trigger for testing
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch and alert new Supreme Court cases
+        env:
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          python3 - <<'EOF'
+          import urllib.request
+          import json
+          import ssl
+          import os
+          import re
+          import smtplib
+          import xml.etree.ElementTree as ET
+          from datetime import datetime, timezone
+          from email.mime.multipart import MIMEMultipart
+          from email.mime.text import MIMEText
+
+          ctx = ssl.create_default_context()
+          ctx.check_hostname = False
+          ctx.verify_mode = ssl.CERT_NONE
+
+          ANNOUNCEMENTS_RSS = 'https://www.supremecourt.ohio.gov/rss/cases/dailyannouncement.aspx'
+          COURT_NEWS_RSS    = 'https://www.supremecourt.ohio.gov/RSS/CNO/happening.aspx'
+          SEEN_CASES_FILE   = 'court_data/seen_cases.json'
+          GMAIL_PASSWORD    = os.environ.get('GMAIL_APP_PASSWORD', '')
+          EMAIL_ADDRESS     = 'scottc@scot.tc'
+
+          def fetch_rss(url):
+              req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+              with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                  return resp.read()
+
+          def strip_html(text):
+              return re.sub(r'<[^>]+>', '', text or '').strip()
+
+          def send_email(subject, html_body, text_body):
+              if not GMAIL_PASSWORD:
+                  print('WARNING: GMAIL_APP_PASSWORD not set - skipping email')
+                  return
+              msg = MIMEMultipart('alternative')
+              msg['Subject'] = subject
+              msg['From']    = f'Ohio Courts Alert <{EMAIL_ADDRESS}>'
+              msg['To']      = EMAIL_ADDRESS
+              msg.attach(MIMEText(text_body, 'plain'))
+              msg.attach(MIMEText(html_body, 'html'))
+              with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                  server.starttls()
+                  server.login(EMAIL_ADDRESS, GMAIL_PASSWORD)
+                  server.send_message(msg)
+              print('Email sent.')
+
+          os.makedirs('court_data', exist_ok=True)
+          first_run = False
+          try:
+              with open(SEEN_CASES_FILE) as f:
+                  seen = json.load(f)
+          except (FileNotFoundError, json.JSONDecodeError):
+              seen = {'seen_ids': [], 'last_checked': '', 'initialized': False}
+              first_run = True
+
+          print('Fetching Supreme Court Daily Announcements RSS...')
+          announcements_xml = fetch_rss(ANNOUNCEMENTS_RSS)
+          print('Fetching Court News Ohio RSS...')
+          news_xml = fetch_rss(COURT_NEWS_RSS)
+
+          news_tree  = ET.fromstring(news_xml)
+          court_news = []
+          for item in news_tree.findall('.//item'):
+              title = strip_html(item.findtext('title', ''))
+              desc  = strip_html(item.findtext('description', ''))
+              link  = (item.findtext('link', '') or '').strip()
+              if title:
+                  court_news.append({'title': title.lower(), 'desc': desc, 'link': link})
+          print(f'  Court News Ohio: {len(court_news)} items')
+
+          ann_tree  = ET.fromstring(announcements_xml)
+          ann_items = ann_tree.findall('.//item')
+          print(f'  Announcements: {len(ann_items)} items')
+
+          if first_run:
+              for item in ann_items:
+                  guid = (item.findtext('guid') or item.findtext('link') or '').strip()
+                  if guid:
+                      seen['seen_ids'].append(guid)
+              seen['initialized'] = True
+              seen['last_checked'] = datetime.now(timezone.utc).isoformat()
+              with open(SEEN_CASES_FILE, 'w') as f:
+                  json.dump(seen, f, indent=2)
+              print(f'First run: initialised with {len(seen["seen_ids"])} existing cases.')
+              send_email(
+                  subject='Ohio Courts Alert - System Active',
+                  html_body=('<p><strong>Ohio Supreme Court alert system is now active.</strong></p>'
+                      f'<p>Tracking {len(seen["seen_ids"])} existing cases. '
+                      'You will receive a daily email at 10am when new cases are filed or accepted.</p>'
+                      '<p style="color:#666;font-size:12px;">Source: '
+                      '<a href="https://www.supremecourt.ohio.gov">supremecourt.ohio.gov</a></p>'),
+                  text_body=('Ohio Supreme Court alert system is now active.\n'
+                      f'Tracking {len(seen["seen_ids"])} existing cases.\n'
+                      'You will receive a daily email at 10am when new cases are filed or accepted.')
+              )
+              import sys; sys.exit(0)
+
+          new_cases = []
+          for item in ann_items:
+              title = strip_html(item.findtext('title', ''))
+              desc  = strip_html(item.findtext('description', ''))
+              link  = (item.findtext('link', '') or '').strip()
+              guid  = (item.findtext('guid') or link or title or '').strip()
+              if not guid or guid in seen['seen_ids']:
+                  continue
+              summary = summary_link = None
+              sig_words = [w for w in re.split(r'\W+', title.lower()) if len(w) > 4
+                           and w not in ('state', 'ohio', 'court', 'relator', 'versus')]
+              for news_item in court_news:
+                  if any(w in news_item['title'] for w in sig_words):
+                      summary      = news_item['desc']
+                      summary_link = news_item['link']
+                      break
+              new_cases.append({'title': title, 'description': desc, 'link': link,
+                  'guid': guid, 'summary': summary, 'summary_link': summary_link})
+              seen['seen_ids'].append(guid)
+
+          print(f'New cases today: {len(new_cases)}')
+
+          if new_cases:
+              today = datetime.now(timezone.utc).strftime('%B %-d, %Y')
+              subject = f'Ohio Supreme Court - {len(new_cases)} new case action(s) - {today}'
+              count_word = 'actions' if len(new_cases) != 1 else 'action'
+              rows_html = ''
+              rows_text = ''
+              for case in new_cases:
+                  rows_html += '<tr><td style="padding:12px 0;border-bottom:1px solid #eee;">'
+                  rows_html += f'<strong>{case["title"]}</strong><br>'
+                  if case['description']:
+                      rows_html += f'<em style="color:#555;">{case["description"]}</em><br>'
+                  if case['summary']:
+                      excerpt = case['summary'][:300] + ('...' if len(case['summary']) > 300 else '')
+                      rows_html += f'<span style="color:#333;font-size:14px;">{excerpt}</span><br>'
+                  links = []
+                  if case['link']:
+                      links.append(f'<a href="{case["link"]}">View docket</a>')
+                  if case['summary_link'] and case['summary_link'] != case['link']:
+                      links.append(f'<a href="{case["summary_link"]}">Court News Ohio</a>')
+                  if links:
+                      rows_html += '<span style="font-size:13px;">' + ' &middot; '.join(links) + '</span>'
+                  rows_html += '</td></tr>'
+                  rows_text += f'- {case["title"]}\n'
+                  if case['description']:
+                      rows_text += f'  {case["description"]}\n'
+                  if case['link']:
+                      rows_text += f'  {case["link"]}\n'
+                  rows_text += '\n'
+              html_body = (f'<div style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">'
+                  f'<h2 style="font-size:18px;border-bottom:2px solid #333;padding-bottom:8px;">Ohio Supreme Court - {today}</h2>'
+                  f'<p style="color:#555;font-size:14px;">{len(new_cases)} new case {count_word} today</p>'
+                  f'<table style="width:100%;border-collapse:collapse;">{rows_html}</table>'
+                  '<p style="color:#999;font-size:12px;margin-top:20px;">Source: <a href="https://www.supremecourt.ohio.gov" style="color:#999;">supremecourt.ohio.gov</a></p></div>')
+              text_body = f'Ohio Supreme Court - {today}\n' + '='*40 + f'\n\n{rows_text}'
+              send_email(subject, html_body, text_body)
+          else:
+              print('No new cases today - no email sent.')
+
+          seen['last_checked'] = datetime.now(timezone.utc).isoformat()
+          if len(seen['seen_ids']) > 1000:
+              seen['seen_ids'] = seen['seen_ids'][-1000:]
+          with open(SEEN_CASES_FILE, 'w') as f:
+              json.dump(seen, f, indent=2)
+          print('Done.')
+          EOF
+
+      - name: Commit updated seen cases
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add court_data/seen_cases.json
+          git diff --staged --quiet || git commit -m "Update seen court cases [skip ci]"
+          git push
