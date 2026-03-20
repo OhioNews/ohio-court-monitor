@@ -33,7 +33,7 @@ jobs:
           COURT_NEWS_RSS    = 'https://www.supremecourt.ohio.gov/RSS/CNO/happening.aspx'
           SEEN_CASES_FILE   = 'court_data/seen_cases.json'
           GMAIL_PASSWORD    = os.environ.get('GMAIL_APP_PASSWORD', '')
-          EMAIL_ADDRESS     = 'scottc@scot.tc'
+          EMAIL_ADDRESS     = 'scott@signalohio.org'
 
           def strip_html(text):
               return re.sub(r'<[^>]+>', '', text or '').strip()
