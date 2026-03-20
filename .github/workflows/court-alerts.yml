@@ -171,12 +171,15 @@ jobs:
                       rows_text += f"  {case['link']}\n"
                   rows_text += "\n"
 
-              html_body = f"""<div style='font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;'>
-<h2 style='font-size:18px;border-bottom:2px solid #333;padding-bottom:8px;'>Ohio Supreme Court &mdash; {today}</h2>
-<p style='color:#555;font-size:14px;'>{len(new_cases)} new case {count_word} today</p>
-<table style='width:100%;border-collapse:collapse;'>{rows_html}</table>
-<p style='color:#999;font-size:12px;margin-top:20px;'>Source: <a href='https://www.supremecourt.ohio.gov' style='color:#999;'>supremecourt.ohio.gov</a></p>
-</div>"""
+              html_body = (
+                  "<div style='font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;'>"
+                  f"<h2 style='font-size:18px;border-bottom:2px solid #333;padding-bottom:8px;'>Ohio Supreme Court &mdash; {today}</h2>"
+                  f"<p style='color:#555;font-size:14px;'>{len(new_cases)} new case {count_word} today</p>"
+                  f"<table style='width:100%;border-collapse:collapse;'>{rows_html}</table>"
+                  "<p style='color:#999;font-size:12px;margin-top:20px;'>Source: "
+                  "<a href='https://www.supremecourt.ohio.gov' style='color:#999;'>supremecourt.ohio.gov</a></p>"
+                  "</div>"
+              )
               text_body = f"Ohio Supreme Court - {today}\n" + "="*40 + f"\n\n{rows_text}"
 
               send_email(subject, html_body, text_body)
