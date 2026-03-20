@@ -2,8 +2,8 @@ name: Ohio Court Alerts
 
 on:
   schedule:
-    - cron: '0 14 * * *'  # 10am EDT / 9am EST daily
-  workflow_dispatch:       # Allow manual trigger for testing
+    - cron: '0 14 * * *' # 10am EDT / 9am EST daily
+  workflow_dispatch: # Allow manual trigger for testing
 
 jobs:
   alert:
@@ -29,14 +29,14 @@ jobs:
           from email.mime.multipart import MIMEMultipart
           from email.mime.text import MIMEText
 
-          # ââ Configuration ââââââââââââââââââââââââââââââââââââââââââââââââââââ
-          EMAIL_ADDRESS     = 'scott@signalohio.org'
-          GMAIL_PASSWORD    = os.environ.get('GMAIL_APP_PASSWORD', '')
-          SEEN_CASES_FILE   = 'court_data/seen_cases.json'
+          # --- Configuration ---
+          EMAIL_ADDRESS = 'scott@signalohio.org'
+          GMAIL_PASSWORD = os.environ.get('GMAIL_APP_PASSWORD', '')
+          SEEN_CASES_FILE = 'court_data/seen_cases.json'
 
           # Ohio Supreme Court feeds
           ANNOUNCEMENTS_RSS = 'https://www.supremecourt.ohio.gov/rss/cases/dailyannouncement.aspx'
-          COURT_NEWS_RSS    = 'https://www.supremecourt.ohio.gov/RSS/CNO/happening.aspx'
+          COURT_NEWS_RSS = 'https://www.supremecourt.ohio.gov/RSS/CNO/happening.aspx'
 
           # Federal court feeds (CourtListener)
           FEDERAL_FEEDS = {
@@ -45,7 +45,7 @@ jobs:
               'Sixth Circuit': 'https://www.courtlistener.com/feed/court/ca6/',
           }
 
-          # ââ Keyword filter for federal cases âââââââââââââââââââââââââââââââââ
+          # --- Keyword filter for federal cases ---
           # Matched case-insensitively against title + summary text
           KEYWORDS = [
               # State officials
@@ -100,17 +100,17 @@ jobs:
                   return
               msg = MIMEMultipart('alternative')
               msg['Subject'] = subject
-              msg['From']    = f'Ohio Courts Alert <{EMAIL_ADDRESS}>'
-              msg['To']      = EMAIL_ADDRESS
+              msg['From'] = f'Ohio Courts Alert <{EMAIL_ADDRESS}>'
+              msg['To'] = EMAIL_ADDRESS
               msg.attach(MIMEText(text_body, 'plain'))
-              msg.attach(MIMEText(html_body,  'html'))
+              msg.attach(MIMEText(html_body, 'html'))
               with smtplib.SMTP('smtp.gmail.com', 587) as server:
                   server.starttls()
                   server.login(EMAIL_ADDRESS, GMAIL_PASSWORD)
                   server.send_message(msg)
               print("Email sent.")
 
-          # ââ Load seen cases ââââââââââââââââââââââââââââââââââââââââââââââââââ
+          # --- Load seen cases ---
           os.makedirs('court_data', exist_ok=True)
           first_run = False
           try:
@@ -124,7 +124,7 @@ jobs:
           if 'seen_federal' not in seen:
               seen['seen_federal'] = []
 
-          # ââ Fetch Ohio Supreme Court RSS feeds ââââââââââââââââââââââââââââââ
+          # --- Fetch Ohio Supreme Court RSS feeds ---
           print("Fetching Supreme Court Daily Announcements RSS...")
           announcements = feedparser.parse(ANNOUNCEMENTS_RSS)
           print("Fetching Court News Ohio RSS...")
@@ -134,8 +134,8 @@ jobs:
           court_news = []
           for entry in news_feed.entries:
               title = strip_html(entry.get('title', ''))
-              desc  = strip_html(entry.get('summary', '') or entry.get('description', ''))
-              link  = entry.get('link', '')
+              desc = strip_html(entry.get('summary', '') or entry.get('description', ''))
+              link = entry.get('link', '')
               if title:
                   court_news.append({'title': title.lower(), 'desc': desc, 'link': link})
           print(f"  Court News Ohio: {len(court_news)} items")
@@ -143,7 +143,7 @@ jobs:
           ann_entries = announcements.entries
           print(f"  Announcements: {len(ann_entries)} items")
 
-          # ââ Fetch Federal Court RSS feeds ââââââââââââââââââââââââââââââââââââ
+          # --- Fetch Federal Court RSS feeds ---
           federal_entries = {}
           for court_name, feed_url in FEDERAL_FEEDS.items():
               print(f"Fetching {court_name} feed...")
@@ -151,7 +151,7 @@ jobs:
               federal_entries[court_name] = feed.entries
               print(f"  {court_name}: {len(feed.entries)} items")
 
-          # ââ First run: initialise silently, send confirmation ââââââââââââââââ
+          # --- First run: initialise silently, send confirmation ---
           if first_run:
               for entry in ann_entries:
                   guid = (entry.get('id', '') or entry.get('link', '') or entry.get('title', '')).strip()
@@ -177,7 +177,7 @@ jobs:
                       "<p>Monitored federal courts: N.D. Ohio, S.D. Ohio, Sixth Circuit "
                       "(keyword-filtered).</p>"
                       "<p style='color:#666;font-size:12px;'>Sources: "
-                      "<a href='https://www.supremecourt.ohio.gov'>supremecourt.ohio.gov</a> Â· "
+                      "<a href='https://www.supremecourt.ohio.gov'>supremecourt.ohio.gov</a> &middot; "
                       "<a href='https://www.courtlistener.com'>courtlistener.com</a></p>"
                   ),
                   text_body=(
@@ -190,13 +190,13 @@ jobs:
               )
               import sys; sys.exit(0)
 
-          # ââ Find new Ohio Supreme Court cases ââââââââââââââââââââââââââââââââ
+          # --- Find new Ohio Supreme Court cases ---
           new_sc_cases = []
           for entry in ann_entries:
               title = strip_html(entry.get('title', ''))
-              desc  = strip_html(entry.get('summary', '') or entry.get('description', ''))
-              link  = entry.get('link', '')
-              guid  = (entry.get('id', '') or link or title or '').strip()
+              desc = strip_html(entry.get('summary', '') or entry.get('description', ''))
+              link = entry.get('link', '')
+              guid = (entry.get('id', '') or link or title or '').strip()
 
               if not guid or guid in seen['seen_ids']:
                   continue
@@ -206,7 +206,7 @@ jobs:
                            and w not in ('state', 'ohio', 'court', 'relator', 'versus')]
               for news_item in court_news:
                   if any(w in news_item['title'] for w in sig_words):
-                      summary      = news_item['desc']
+                      summary = news_item['desc']
                       summary_link = news_item['link']
                       break
 
@@ -218,15 +218,15 @@ jobs:
 
           print(f"New Supreme Court cases: {len(new_sc_cases)}")
 
-          # ââ Find new federal cases (keyword-filtered) ââââââââââââââââââââââââ
+          # --- Find new federal cases (keyword-filtered) ---
           new_fed_cases = []
           fed_skipped = 0
           for court_name, entries in federal_entries.items():
               for entry in entries:
                   title = strip_html(entry.get('title', ''))
-                  desc  = strip_html(entry.get('summary', '') or entry.get('description', ''))
-                  link  = entry.get('link', '')
-                  guid  = (entry.get('id', '') or link or title or '').strip()
+                  desc = strip_html(entry.get('summary', '') or entry.get('description', ''))
+                  link = entry.get('link', '')
+                  guid = (entry.get('id', '') or link or title or '').strip()
 
                   if not guid or guid in seen['seen_federal']:
                       continue
@@ -244,10 +244,10 @@ jobs:
 
           print(f"New federal cases (matched): {len(new_fed_cases)}, skipped: {fed_skipped}")
 
-          # ââ Build and send combined email ââââââââââââââââââââââââââââââââââââ
+          # --- Build and send combined email ---
           total_new = len(new_sc_cases) + len(new_fed_cases)
           if total_new > 0:
-              today   = datetime.now(timezone.utc).strftime('%B %-d, %Y')
+              today = datetime.now(timezone.utc).strftime('%B %-d, %Y')
               subject = f"Ohio Courts - {total_new} new item(s) - {today}"
 
               html_parts = []
@@ -257,7 +257,7 @@ jobs:
                   "<div style='font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;'>"
               )
 
-              # ââ Ohio Supreme Court section ââââââââââââââââââââââââââââââââââ
+              # Ohio Supreme Court section
               if new_sc_cases:
                   count_word = 'actions' if len(new_sc_cases) != 1 else 'action'
                   html_parts.append(
@@ -302,7 +302,7 @@ jobs:
 
                   html_parts.append("</table>")
 
-              # ââ Federal Courts section ââââââââââââââââââââââââââââââââââââââ
+              # Federal Courts section
               if new_fed_cases:
                   count_word = 'opinions' if len(new_fed_cases) != 1 else 'opinion'
                   html_parts.append(
@@ -343,11 +343,11 @@ jobs:
 
                   html_parts.append("</table>")
 
-              # ââ Footer âââââââââââââââââââââââââââââââââââââââââââââââââââââ
+              # Footer
               html_parts.append(
                   "<p style='color:#999;font-size:12px;margin-top:20px;'>Sources: "
                   "<a href='https://www.supremecourt.ohio.gov' style='color:#999;'>supremecourt.ohio.gov</a>"
-                  " Â· <a href='https://www.courtlistener.com' style='color:#999;'>courtlistener.com</a></p>"
+                  " &middot; <a href='https://www.courtlistener.com' style='color:#999;'>courtlistener.com</a></p>"
                   "</div>"
               )
 
@@ -357,7 +357,7 @@ jobs:
           else:
               print("No new items today - no email sent.")
 
-          # ââ Save updated seen cases ââââââââââââââââââââââââââââââââââââââââââ
+          # --- Save updated seen cases ---
           seen['last_checked'] = datetime.now(timezone.utc).isoformat()
           if len(seen['seen_ids']) > 1000:
               seen['seen_ids'] = seen['seen_ids'][-1000:]
