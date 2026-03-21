@@ -2,7 +2,7 @@ name: Ohio Court Alerts
 
 on:
   schedule:
-    - cron: '0 14 * * *' # 10am EDT / 9am EST daily
+    - cron: '0 14 * * *' # 10am Eastern (summer) / 9am Eastern (winter) daily
   workflow_dispatch: # Allow manual trigger for testing
 
 jobs:
@@ -124,6 +124,10 @@ jobs:
           if 'seen_federal' not in seen:
               seen['seen_federal'] = []
 
+          # Convert to sets for O(1) membership testing
+          seen['seen_ids'] = set(seen['seen_ids'])
+          seen['seen_federal'] = set(seen['seen_federal'])
+
           # --- Fetch Ohio Supreme Court RSS feeds ---
           print("Fetching Supreme Court Daily Announcements RSS...")
           announcements = feedparser.parse(ANNOUNCEMENTS_RSS)
@@ -156,12 +160,12 @@ jobs:
               for entry in ann_entries:
                   guid = (entry.get('id', '') or entry.get('link', '') or entry.get('title', '')).strip()
                   if guid:
-                      seen['seen_ids'].append(guid)
+                      seen['seen_ids'].add(guid)
               for court_name, entries in federal_entries.items():
                   for entry in entries:
                       guid = (entry.get('id', '') or entry.get('link', '') or entry.get('title', '')).strip()
                       if guid:
-                          seen['seen_federal'].append(guid)
+                          seen['seen_federal'].add(guid)
               seen['initialized'] = True
               seen['last_checked'] = datetime.now(timezone.utc).isoformat()
               with open(SEEN_CASES_FILE, 'w') as f:
@@ -214,7 +218,7 @@ jobs:
                   'title': title, 'description': desc, 'link': link,
                   'guid': guid, 'summary': summary, 'summary_link': summary_link
               })
-              seen['seen_ids'].append(guid)
+              seen['seen_ids'].add(guid)
 
           print(f"New Supreme Court cases: {len(new_sc_cases)}")
 
@@ -231,7 +235,7 @@ jobs:
                   if not guid or guid in seen['seen_federal']:
                       continue
 
-                  seen['seen_federal'].append(guid)
+                  seen['seen_federal'].add(guid)
 
                   if not matches_keywords(title, desc):
                       fed_skipped += 1
@@ -358,11 +362,12 @@ jobs:
               print("No new items today - no email sent.")
 
           # --- Save updated seen cases ---
+          # Convert sets back to lists for JSON serialization; trim if oversized
           seen['last_checked'] = datetime.now(timezone.utc).isoformat()
-          if len(seen['seen_ids']) > 1000:
-              seen['seen_ids'] = seen['seen_ids'][-1000:]
-          if len(seen['seen_federal']) > 2000:
-              seen['seen_federal'] = seen['seen_federal'][-2000:]
+          ids_list = list(seen['seen_ids'])
+          fed_list = list(seen['seen_federal'])
+          seen['seen_ids'] = ids_list[-1000:] if len(ids_list) > 1000 else ids_list
+          seen['seen_federal'] = fed_list[-2000:] if len(fed_list) > 2000 else fed_list
           with open(SEEN_CASES_FILE, 'w') as f:
               json.dump(seen, f, indent=2)
           print("Done.")
