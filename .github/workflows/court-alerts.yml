@@ -2,8 +2,8 @@ name: Ohio Court Alerts
 
 on:
   schedule:
-    - cron: '0 14 * * *' # 10am Eastern (summer) / 9am Eastern (winter) daily
-  workflow_dispatch: # Allow manual trigger for testing
+    - cron: '0 14 * * *'  # 10am EDT / 9am EST daily
+  workflow_dispatch:       # Allow manual trigger for testing
 
 jobs:
   alert:
@@ -29,14 +29,14 @@ jobs:
           from email.mime.multipart import MIMEMultipart
           from email.mime.text import MIMEText
 
-          # --- Configuration ---
-          EMAIL_ADDRESS = 'scott@signalohio.org'
-          GMAIL_PASSWORD = os.environ.get('GMAIL_APP_PASSWORD', '')
-          SEEN_CASES_FILE = 'court_data/seen_cases.json'
+          # -- Configuration -------------------------------------------------
+          EMAIL_ADDRESS     = 'scott@signalohio.org'
+          GMAIL_PASSWORD    = os.environ.get('GMAIL_APP_PASSWORD', '')
+          SEEN_CASES_FILE   = 'court_data/seen_cases.json'
 
           # Ohio Supreme Court feeds
-          ANNOUNCEMENTS_RSS = 'https://www.supremecourt.ohio.gov/rss/cases/dailyannouncement.xml'
-          COURT_NEWS_RSS = 'https://www.supremecourt.ohio.gov/RSS/CNO/happening.xml'
+          ANNOUNCEMENTS_RSS = 'https://www.supremecourt.ohio.gov/rss/cases/dailyannouncement.aspx'
+          COURT_NEWS_RSS    = 'https://www.supremecourt.ohio.gov/RSS/CNO/happening.aspx'
 
           # Federal court feeds (CourtListener)
           FEDERAL_FEEDS = {
@@ -45,7 +45,7 @@ jobs:
               'Sixth Circuit': 'https://www.courtlistener.com/feed/court/ca6/',
           }
 
-          # --- Keyword filter for federal cases ---
+          # -- Keyword filter for federal cases ------------------------------
           # Matched case-insensitively against title + summary text
           KEYWORDS = [
               # State officials
@@ -82,7 +82,7 @@ jobs:
               'immigration', 'deportation', 'ICE',
               'detention', 'asylum',
           ]
-          KEYWORDS_LOWER = [k.lower() for k in KEYWORDS]
+          KEYWORDS_LOWER = [k.ng/lower() for k in KEYWORDS]
 
           def strip_html(text):
               return re.sub(r'<[^>]+>', '', text or '').strip()
@@ -100,17 +100,17 @@ jobs:
                   return
               msg = MIMEMultipart('alternative')
               msg['Subject'] = subject
-              msg['From'] = f'Ohio Courts Alert <{EMAIL_ADDRESS}>'
-              msg['To'] = EMAIL_ADDRESS
+              msg['From']    = f'Ohio Courts Alert <{EMAIL_ADDRESS}>'
+              msg['To']      = EMAIL_ADDRESS
               msg.attach(MIMEText(text_body, 'plain'))
-              msg.attach(MIMEText(html_body, 'html'))
+              msg.attach(MIMEText(html_body,  'html'))
               with smtplib.SMTP('smtp.gmail.com', 587) as server:
                   server.starttls()
                   server.login(EMAIL_ADDRESS, GMAIL_PASSWORD)
                   server.send_message(msg)
               print("Email sent.")
 
-          # --- Load seen cases ---
+          # -- Load seen cases -----------------------------------------------
           os.makedirs('court_data', exist_ok=True)
           first_run = False
           try:
@@ -124,11 +124,7 @@ jobs:
           if 'seen_federal' not in seen:
               seen['seen_federal'] = []
 
-          # Convert to sets for O(1) membership testing
-          seen['seen_ids'] = set(seen['seen_ids'])
-          seen['seen_federal'] = set(seen['seen_federal'])
-
-          # --- Fetch Ohio Supreme Court RSS feeds ---
+          # -- Fetch Ohio Supreme Court RSS feeds ----------------------------
           print("Fetching Supreme Court Daily Announcements RSS...")
           announcements = feedparser.parse(ANNOUNCEMENTS_RSS)
           print("Fetching Court News Ohio RSS...")
@@ -138,8 +134,8 @@ jobs:
           court_news = []
           for entry in news_feed.entries:
               title = strip_html(entry.get('title', ''))
-              desc = strip_html(entry.get('summary', '') or entry.get('description', ''))
-              link = entry.get('link', '')
+              desc  = strip_html(entry.get('summary', '') or entry.get('description', ''))
+              link  = entry.get('link', '')
               if title:
                   court_news.append({'title': title.lower(), 'desc': desc, 'link': link})
           print(f"  Court News Ohio: {len(court_news)} items")
@@ -147,7 +143,7 @@ jobs:
           ann_entries = announcements.entries
           print(f"  Announcements: {len(ann_entries)} items")
 
-          # --- Fetch Federal Court RSS feeds ---
+          # -- Fetch Federal Court RSS feeds ---------------------------------
           federal_entries = {}
           for court_name, feed_url in FEDERAL_FEEDS.items():
               print(f"Fetching {court_name} feed...")
@@ -155,17 +151,17 @@ jobs:
               federal_entries[court_name] = feed.entries
               print(f"  {court_name}: {len(feed.entries)} items")
 
-          # --- First run: initialise silently, send confirmation ---
+          # -- First run: initialise silently, send confirmation -------------
           if first_run:
               for entry in ann_entries:
                   guid = (entry.get('id', '') or entry.get('link', '') or entry.get('title', '')).strip()
                   if guid:
-                      seen['seen_ids'].add(guid)
+                      seen['seen_ids'].append(guid)
               for court_name, entries in federal_entries.items():
                   for entry in entries:
                       guid = (entry.get('id', '') or entry.get('link', '') or entry.get('title', '')).strip()
                       if guid:
-                          seen['seen_federal'].add(guid)
+                          seen['seen_federal'].append(guid)
               seen['initialized'] = True
               seen['last_checked'] = datetime.now(timezone.utc).isoformat()
               with open(SEEN_CASES_FILE, 'w') as f:
@@ -181,7 +177,7 @@ jobs:
                       "<p>Monitored federal courts: N.D. Ohio, S.D. Ohio, Sixth Circuit "
                       "(keyword-filtered).</p>"
                       "<p style='color:#666;font-size:12px;'>Sources: "
-                      "<a href='https://www.supremecourt.ohio.gov'>supremecourt.ohio.gov</a> &middot; "
+                      "<a href='https://www.supremecourt.ohio.gov'>supremecourt.ohio.gov</a> | "
                       "<a href='https://www.courtlistener.com'>courtlistener.com</a></p>"
                   ),
                   text_body=(
@@ -194,13 +190,13 @@ jobs:
               )
               import sys; sys.exit(0)
 
-          # --- Find new Ohio Supreme Court cases ---
+          # -- Find new Ohio Supreme Court cases -----------------------------
           new_sc_cases = []
           for entry in ann_entries:
               title = strip_html(entry.get('title', ''))
-              desc = strip_html(entry.get('summary', '') or entry.get('description', ''))
-              link = entry.get('link', '')
-              guid = (entry.get('id', '') or link or title or '').strip()
+              desc  = strip_html(entry.get('summary', '') or entry.get('description', ''))
+              link  = entry.get('link', '')
+              guid  = (entry.get('id', '') or link or title or '').strip()
 
               if not guid or guid in seen['seen_ids']:
                   continue
@@ -210,7 +206,7 @@ jobs:
                            and w not in ('state', 'ohio', 'court', 'relator', 'versus')]
               for news_item in court_news:
                   if any(w in news_item['title'] for w in sig_words):
-                      summary = news_item['desc']
+                      summary      = news_item['desc']
                       summary_link = news_item['link']
                       break
 
@@ -218,24 +214,24 @@ jobs:
                   'title': title, 'description': desc, 'link': link,
                   'guid': guid, 'summary': summary, 'summary_link': summary_link
               })
-              seen['seen_ids'].add(guid)
+              seen['seen_ids'].append(guid)
 
           print(f"New Supreme Court cases: {len(new_sc_cases)}")
 
-          # --- Find new federal cases (keyword-filtered) ---
+          # -- Find new federal cases (keyword-filtered) ---------------------
           new_fed_cases = []
           fed_skipped = 0
           for court_name, entries in federal_entries.items():
               for entry in entries:
                   title = strip_html(entry.get('title', ''))
-                  desc = strip_html(entry.get('summary', '') or entry.get('description', ''))
-                  link = entry.get('link', '')
-                  guid = (entry.get('id', '') or link or title or '').strip()
+                  desc  = strip_html(entry.get('summary', '') or entry.get('description', ''))
+                  link  = entry.get('link', '')
+                  guid  = (entry.get('id', '') or link or title or '').strip()
 
                   if not guid or guid in seen['seen_federal']:
                       continue
 
-                  seen['seen_federal'].add(guid)
+                  seen['seen_federal'].append(guid)
 
                   if not matches_keywords(title, desc):
                       fed_skipped += 1
@@ -248,10 +244,10 @@ jobs:
 
           print(f"New federal cases (matched): {len(new_fed_cases)}, skipped: {fed_skipped}")
 
-          # --- Build and send combined email ---
+          # -- Build and send combined email ---------------------------------
           total_new = len(new_sc_cases) + len(new_fed_cases)
           if total_new > 0:
-              today = datetime.now(timezone.utc).strftime('%B %-d, %Y')
+              today   = datetime.now(timezone.utc).strftime('%B %-d, %Y')
               subject = f"Ohio Courts - {total_new} new item(s) - {today}"
 
               html_parts = []
@@ -261,7 +257,7 @@ jobs:
                   "<div style='font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;'>"
               )
 
-              # Ohio Supreme Court section
+              # -- Ohio Supreme Court section --------------------------------
               if new_sc_cases:
                   count_word = 'actions' if len(new_sc_cases) != 1 else 'action'
                   html_parts.append(
@@ -306,7 +302,7 @@ jobs:
 
                   html_parts.append("</table>")
 
-              # Federal Courts section
+              # -- Federal Courts section ------------------------------------
               if new_fed_cases:
                   count_word = 'opinions' if len(new_fed_cases) != 1 else 'opinion'
                   html_parts.append(
@@ -342,16 +338,16 @@ jobs:
 
                       text_parts.append(f"- [{case['court']}] {case['title']}\n")
                       if case['link']:
-                          text_parts.append(f"  {case['link']}\n")
+                          text_parts.append(f"  {case['link']\n")
                       text_parts.append("\n")
 
                   html_parts.append("</table>")
 
-              # Footer
+              # -- Footer ----------------------------------------------------
               html_parts.append(
                   "<p style='color:#999;font-size:12px;margin-top:20px;'>Sources: "
                   "<a href='https://www.supremecourt.ohio.gov' style='color:#999;'>supremecourt.ohio.gov</a>"
-                  " &middot; <a href='https://www.courtlistener.com' style='color:#999;'>courtlistener.com</a></p>"
+                  " | <a href='https://www.courtlistener.com' style='color:#999;'>courtlistener.com</a></p>"
                   "</div>"
               )
 
@@ -361,13 +357,12 @@ jobs:
           else:
               print("No new items today - no email sent.")
 
-          # --- Save updated seen cases ---
-          # Convert sets back to lists for JSON serialization; trim if oversized
+          # -- Save updated seen cases ----------------------------------------
           seen['last_checked'] = datetime.now(timezone.utc).isoformat()
-          ids_list = list(seen['seen_ids'])
-          fed_list = list(seen['seen_federal'])
-          seen['seen_ids'] = ids_list[-1000:] if len(ids_list) > 1000 else ids_list
-          seen['seen_federal'] = fed_list[-2000:] if len(fed_list) > 2000 else fed_list
+          if len(seen['seen_ids']) > 1000:
+              seen['seen_ids'] = seen['seen_ids'][-1000:]
+          if len(seen['seen_federal']) > 2000:
+              seen['seen_federal'] = seen['seen_federal'][-2000:]
           with open(SEEN_CASES_FILE, 'w') as f:
               json.dump(seen, f, indent=2)
           print("Done.")
