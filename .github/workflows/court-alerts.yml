@@ -20,12 +20,13 @@ jobs:
         run: |
           pip install feedparser --quiet
           python3 - <<'EOF'
+          import calendar
           import feedparser
           import json
           import os
           import re
           import smtplib
-          from datetime import datetime, timezone
+          from datetime import datetime, timedelta, timezone
           from email.mime.multipart import MIMEMultipart
           from email.mime.text import MIMEText
 
@@ -82,7 +83,22 @@ jobs:
               'immigration', 'deportation', 'ICE',
               'detention', 'asylum',
           ]
-          KEYWORDS_LOWER = [k.ng/lower() for k in KEYWORDS]
+          KEYWORDS_LOWER = [k.lower() for k in KEYWORDS]
+
+          LOOKBACK_DAYS = 3  # only surface entries published within this window
+
+          def entry_date(entry):
+              for attr in ('published_parsed', 'updated_parsed'):
+                  t = entry.get(attr)
+                  if t:
+                      return datetime.fromtimestamp(calendar.timegm(t), tz=timezone.utc)
+              return None
+
+          def is_recent(entry):
+              dt = entry_date(entry)
+              if dt is None:
+                  return True  # no date field — include to be safe
+              return dt >= datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
 
           def strip_html(text):
               return re.sub(r'<[^>]+>', '', text or '').strip()
@@ -193,6 +209,9 @@ jobs:
           # -- Find new Ohio Supreme Court cases -----------------------------
           new_sc_cases = []
           for entry in ann_entries:
+              if not is_recent(entry):
+                  continue
+
               title = strip_html(entry.get('title', ''))
               desc  = strip_html(entry.get('summary', '') or entry.get('description', ''))
               link  = entry.get('link', '')
@@ -223,6 +242,9 @@ jobs:
           fed_skipped = 0
           for court_name, entries in federal_entries.items():
               for entry in entries:
+                  if not is_recent(entry):
+                      continue
+
                   title = strip_html(entry.get('title', ''))
                   desc  = strip_html(entry.get('summary', '') or entry.get('description', ''))
                   link  = entry.get('link', '')
@@ -338,7 +360,7 @@ jobs:
 
                       text_parts.append(f"- [{case['court']}] {case['title']}\n")
                       if case['link']:
-                          text_parts.append(f"  {case['link']\n")
+                          text_parts.append(f"  {case['link']}\n")
                       text_parts.append("\n")
 
                   html_parts.append("</table>")
@@ -357,7 +379,7 @@ jobs:
           else:
               print("No new items today - no email sent.")
 
-          # -- Save updated seen cases ----------------------------------------
+          # -- Save updated seen cases ---------------------------------------
           seen['last_checked'] = datetime.now(timezone.utc).isoformat()
           if len(seen['seen_ids']) > 1000:
               seen['seen_ids'] = seen['seen_ids'][-1000:]
