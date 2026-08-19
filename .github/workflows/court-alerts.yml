@@ -1,9 +1,11 @@
 name: Ohio Court Alerts
 
 on:
-  schedule:
-    - cron: '0 14 * * *'  # 10am EDT / 9am EST daily
-  workflow_dispatch:       # Allow manual trigger for testing
+  # Daily schedule retired August 2026. The monitor is no longer needed, and its
+  # alerts were addressed to a mailbox being retired, so a scheduled run would
+  # have failed silently. Left dispatch-only so the tool stays runnable if it is
+  # ever wanted again.
+  workflow_dispatch:
 
 jobs:
   alert:
